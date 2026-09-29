@@ -80,7 +80,7 @@ resource "aws_security_group" "this" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = [var.management_cidr]
   }
 
   ingress {
@@ -123,7 +123,7 @@ data "oci_core_images" "ol8" {
   compartment_id         = var.oci_compartment
   operating_system       = "Oracle Linux"
   operating_system_version = "8"
-  shape                  = "VM.Standard.E4.Flex"
+  shape                  = "VM.Standard.A1.Flex"
   sort_by                = "TIMECREATED"
   sort_order             = "DESC"
 }
@@ -131,9 +131,9 @@ data "oci_core_images" "ol8" {
 resource "oci_core_vcn" "this" {
   count              = var.oci_enabled ? 1 : 0
   compartment_id     = var.oci_compartment
-  cidr_block         = var.vpc_cidr
+  cidr_block         = var.oci_vpc_cidr
   display_name       = "${var.project_name}-${var.environment}-vcn"
-  dns_label          = substr(var.project_name, 0, 15)
+  dns_label          = substr(replace(var.project_name, "-", ""), 0, 15)
 
   freeform_tags = {
     Environment = var.environment
@@ -170,10 +170,11 @@ resource "oci_core_subnet" "this" {
   count               = var.oci_enabled ? 1 : 0
   compartment_id      = var.oci_compartment
   vcn_id              = oci_core_vcn.this[0].id
-  cidr_block          = var.subnet_cidr
+  cidr_block          = var.oci_subnet_cidr
   display_name        = "${var.project_name}-${var.environment}-subnet"
-  prohibit_public_ip  = false
-  route_table_id      = oci_core_vcn.this[0].default_route_table_id
+  prohibit_public_ip_on_vnic  = false
+    route_table_id      = oci_core_vcn.this[0].default_route_table_id
+  security_list_ids = [oci_core_security_list.this[0].id]
 
   freeform_tags = {
     Environment = var.environment
@@ -190,7 +191,7 @@ resource "oci_core_security_list" "this" {
 
   # SSH ingress
   ingress_security_rules {
-    source      = "0.0.0.0/0"
+    source      = var.management_cidr
     source_type = "CIDR_BLOCK"
     protocol    = "6"
     tcp_options {

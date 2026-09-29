@@ -48,6 +48,12 @@ variable "instance_count" {
   default     = 1
 }
 
+variable "management_cidr" {
+  description = "CIDR block for management access (e.g., SSH)"
+  type        = string
+  default     = "10.0.0.0/8"
+}
+
 # ============================================================
 # AWS Configuration
 # ============================================================
@@ -110,10 +116,22 @@ variable "oci_compartment_ocid" {
   default     = ""
 }
 
+variable "oci_vpc_cidr" {
+  description = "CIDR block for the OCI VCN"
+  type        = string
+  default     = "172.16.0.0/16"
+}
+
+variable "oci_subnet_cidr" {
+  description = "CIDR block for the OCI subnet"
+  type        = string
+  default     = "172.16.1.0/24"
+}
+
 variable "oci_instance_shape" {
   description = "OCI compute instance shape"
   type        = string
-  default     = "VM.Standard.E4.Flex"
+  default     = "VM.Standard.A1.Flex"
 }
 
 variable "oci_instance_ocpus" {

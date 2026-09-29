@@ -47,3 +47,21 @@ variable "oci_compartment" {
   type        = string
   default     = ""
 }
+
+variable "management_cidr" {
+  description = "CIDR block for management access (e.g., SSH)"
+  type        = string
+  default     = "10.0.0.0/8"
+}
+
+variable "oci_vpc_cidr" {
+  description = "CIDR block for the OCI VCN"
+  type        = string
+  default     = "172.16.0.0/16"
+}
+
+variable "oci_subnet_cidr" {
+  description = "CIDR block for the OCI subnet"
+  type        = string
+  default     = "172.16.1.0/24"
+}

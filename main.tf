@@ -13,11 +13,14 @@ module "network" {
   environment       = var.environment
   vpc_cidr          = var.vpc_cidr
   subnet_cidr       = var.subnet_cidr
+  management_cidr   = var.management_cidr
   aws_enabled       = var.aws_enabled
   oci_enabled       = var.oci_enabled
   aws_region        = var.aws_region
   oci_region        = var.oci_region
   oci_compartment   = var.oci_compartment_ocid
+  oci_vpc_cidr      = var.oci_vpc_cidr
+  oci_subnet_cidr   = var.oci_subnet_cidr
 }
 
 # Compute module: provisions EC2 (AWS) and compute instances (OCI)

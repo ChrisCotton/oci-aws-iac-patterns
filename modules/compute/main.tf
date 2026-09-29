@@ -20,6 +20,12 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
+resource "aws_key_pair" "this" {
+  count      = var.aws_enabled && var.aws_ssh_public_key != "" ? 1 : 0
+  key_name   = "${var.project_name}-${var.environment}-key"
+  public_key = var.aws_ssh_public_key
+}
+
 resource "aws_instance" "this" {
   count                       = var.aws_enabled ? var.instance_count : 0
   ami                         = var.aws_ami_id != "" ? var.aws_ami_id : data.aws_ami.amazon_linux[0].id
@@ -27,9 +33,7 @@ resource "aws_instance" "this" {
   subnet_id                   = var.aws_subnet_id
   vpc_security_group_ids      = [var.aws_security_group]
   associate_public_ip_address = true
-
-  # Only set key_name if a key pair exists (simplified: use inline key)
-  # In production, reference a pre-created key pair
+  key_name                    = var.aws_ssh_public_key != "" ? aws_key_pair.this[0].key_name : null
   tags = {
     Name        = "${var.project_name}-${var.environment}-instance-${count.index + 1}"
     Environment = var.environment

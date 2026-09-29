@@ -1,8 +1,10 @@
 # OCI + AWS Dual-Cloud IaC Patterns
 
-> Production-grade Terraform modules for provisioning equivalent infrastructure in AWS and Oracle Cloud Infrastructure (OCI) from a single interface.
+> Terraform reference modules exploring consistent network and compute provisioning across AWS and OCI.
 
 Built to solve a real problem: when an organization runs multiple clouds ( by compliance requirement, contract obligation, or strategic choice ), the infrastructure code usually forks into separate codebases that drift apart. This project demonstrates the alternative: one abstraction layer with cloud-specific implementations underneath.
+
+> **Note**: These are reference implementations, not production deployments. No live cloud deployment has been validated.
 
 ## Why This Exists
 
@@ -43,9 +45,9 @@ This project takes a middle path: define the infrastructure contract ( "I need a
 
 ## Key Design Decisions
 
-### 1. Same CIDR, Different Implementation
+### 1. Independent CIDRs, Consistent Interface
 
-Both AWS and OCI receive the same `vpc_cidr` and `subnet_cidr` variables. AWS provisions a VPC with AZ-specific subnets. OCI provisions a VCN with regional subnets ( spanning all availability domains ). The consumer doesn't need to know the difference.
+Each cloud now uses a dedicated CIDR range to prevent IP overlap in dual-cloud deployments. AWS uses `vpc_cidr` and `subnet_cidr`, while OCI uses `oci_vpc_cidr` and `oci_subnet_cidr`. The module interface remains consistent, but the underlying network addressing is independent.
 
 ### 2. Count-Based Cloud Toggle
 
@@ -73,8 +75,8 @@ locals {
 
 - **Regional subnets**: OCI subnets span all availability domains ( unlike AWS AZ-specific subnets ). The module respects this.
 - **Compartment-based isolation**: OCI resources are placed in a specified compartment ( not an account boundary like AWS ).
-- **Flex shapes**: OCI's `VM.Standard.E4.Flex` shape allows configurable OCPUs and memory. The module exposes `oci_ocpus` and `oci_memory_gb` variables.
-- **Always Free eligible**: Default shape and OCPU/memory settings fit within OCI's Always Free tier.
+- **Flex shapes**: OCI's Ampere A1 and E-series Flex shapes allow configurable OCPUs and memory. The module defaults to an Always Free-eligible `VM.Standard.A1.Flex` shape and exposes `oci_ocpus` and `oci_memory_gb` variables.
+- **Always Free eligible**: Default shape and OCPU/memory settings fit within OCI's Always Free tier for Ampere A1 instances.
 
 ## Quick Start
 
@@ -145,7 +147,7 @@ terraform apply
 
 | Concern | AWS | OCI | How This Module Handles It |
 |---------|-----|-----|---------------------------|
-| Network boundary | VPC | VCN | Same `vpc_cidr` variable, different resource types |
+| Network boundary | VPC | VCN | Independent `vpc_cidr` and `oci_vpc_cidr` variables |
 | Subnet scope | AZ-specific | Regional (all ADs) | Module respects OCI's regional model |
 | Internet access | Internet Gateway | Internet Gateway | Both provisioned identically |
 | Security rules | Security Group | Security List | Same port definitions (22, 80, 443), different syntax |
@@ -166,7 +168,7 @@ terraform apply
 
 ## Context
 
-This pattern was distilled from multi-cloud infrastructure work at Raytheon, where defense programs required AWS, Azure, GCP, and OCI depending on compliance frameworks and contractual obligations. The abstraction approach ( define the contract, implement per-cloud ) proved more maintainable than maintaining separate codebases per cloud.
+This pattern was distilled from multi-cloud infrastructure work across defense, media, and cloud consulting engagements.
 
 ## License
 
