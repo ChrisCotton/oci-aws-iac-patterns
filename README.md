@@ -1,0 +1,173 @@
+# OCI + AWS Dual-Cloud IaC Patterns
+
+> Production-grade Terraform modules for provisioning equivalent infrastructure in AWS and Oracle Cloud Infrastructure (OCI) from a single interface.
+
+Built to solve a real problem: when an organization runs multiple clouds ( by compliance requirement, contract obligation, or strategic choice ), the infrastructure code usually forks into separate codebases that drift apart. This project demonstrates the alternative: one abstraction layer with cloud-specific implementations underneath.
+
+## Why This Exists
+
+Most multi-cloud Terraform projects fall into one of two traps:
+
+1. **Copy-paste divergence**: two separate codebases, one per cloud. They start identical and drift until nobody can tell you why AWS and OCI differ.
+2. **Premature abstraction**: an over-engineered "cloud-agnostic" layer that hides so much it becomes unusable for real workloads.
+
+This project takes a middle path: define the infrastructure contract ( "I need a network, a compute instance, and security rules" ), implement it per-cloud, and expose the same variables and outputs regardless of which cloud is active.
+
+```
+                    +-----------------+
+                    |  Root Module    |
+                    |  (main.tf)      |
+                    +--------+--------+
+                             |
+              +--------------+--------------+
+              |                             |
+    +---------+---------+         +---------+---------+
+    |  Network Module   |         |  Compute Module   |
+    |  (VPC / VCN)      |         |  (EC2 / OCI VM)   |
+    +---------+---------+         +---------+---------+
+              |                             |
+    +---------+---------+         +---------+---------+
+    |  AWS Provider     |         |  AWS Provider     |
+    |  aws_vpc          |         |  aws_instance     |
+    |  aws_subnet       |         |                   |
+    |  aws_sec_group    |         |                   |
+    +-------------------+         +-------------------+
+              |
+    +---------+---------+
+    |  OCI Provider     |
+    |  oci_core_vcn     |         +---------+---------+
+    |  oci_core_subnet  |         |  OCI Provider     |
+    |  oci_sec_list     |         |  oci_core_instance|
+    +-------------------+         +-------------------+
+```
+
+## Key Design Decisions
+
+### 1. Same CIDR, Different Implementation
+
+Both AWS and OCI receive the same `vpc_cidr` and `subnet_cidr` variables. AWS provisions a VPC with AZ-specific subnets. OCI provisions a VCN with regional subnets ( spanning all availability domains ). The consumer doesn't need to know the difference.
+
+### 2. Count-Based Cloud Toggle
+
+Each resource uses `count = var.aws_enabled ? 1 : 0` or `count = var.oci_enabled ? 1 : 0`. This lets you deploy to one cloud, both clouds, or neither ( dry run ) by flipping booleans. No provider configuration errors when a cloud is disabled.
+
+### 3. Normalized Outputs
+
+The module outputs use the same naming convention regardless of cloud:
+- `aws_vpc_id` / `oci_vcn_id` ( not `vpc_id` and `vcn_id` with different semantics )
+- `aws_subnet_id` / `oci_subnet_id`
+- `aws_instance_public_ips` / `oci_instance_public_ips`
+
+Consumers can write logic like:
+
+```hcl
+locals {
+  all_instances = concat(
+    module.compute.aws_instance_public_ips,
+    module.compute.oci_instance_public_ips
+  )
+}
+```
+
+### 4. OCI-Specific Patterns
+
+- **Regional subnets**: OCI subnets span all availability domains ( unlike AWS AZ-specific subnets ). The module respects this.
+- **Compartment-based isolation**: OCI resources are placed in a specified compartment ( not an account boundary like AWS ).
+- **Flex shapes**: OCI's `VM.Standard.E4.Flex` shape allows configurable OCPUs and memory. The module exposes `oci_ocpus` and `oci_memory_gb` variables.
+- **Always Free eligible**: Default shape and OCPU/memory settings fit within OCI's Always Free tier.
+
+## Quick Start
+
+### AWS Only
+
+```bash
+cd examples/aws-only
+terraform init
+terraform plan
+terraform apply
+```
+
+### OCI Only
+
+```bash
+# Set OCI credentials via environment variables or terraform.tfvars
+export TF_VAR_oci_tenancy_ocid="ocid1.tenancy.oc1....."
+export TF_VAR_oci_user_ocid="ocid1.user.oc1....."
+export TF_VAR_oci_fingerprint="aa:bb:cc:..."
+export TF_VAR_oci_private_key_path="~/.oci/oci_api_key.pem"
+export TF_VAR_oci_compartment_ocid="ocid1.compartment.oc1....."
+export TF_VAR_oci_ssh_public_key="ssh-rsa AAAA..."
+
+cd examples/oci-only
+terraform init
+terraform plan
+terraform apply
+```
+
+### Dual-Cloud ( AWS + OCI )
+
+```bash
+# Set both AWS and OCI credentials
+export AWS_REGION=us-west-2
+export TF_VAR_oci_tenancy_ocid="ocid1.tenancy.oc1....."
+# ... ( same as OCI-only above )
+
+cd examples/dual-cloud
+terraform init
+terraform plan
+terraform apply
+```
+
+## Module Structure
+
+```
+.
++-- main.tf              # Root module: calls network + compute modules
++-- variables.tf         # Root variables (cloud toggle, CIDR, instance config)
++-- outputs.tf           # Normalized outputs for both clouds
++-- providers.tf         # AWS + OCI provider configuration
++-- modules/
+|   +-- network/
+|   |   +-- main.tf      # VPC (AWS) + VCN (OCI) + subnets + gateways + security
+|   |   +-- variables.tf
+|   |   +-- outputs.tf
+|   +-- compute/
+|       +-- main.tf      # EC2 (AWS) + compute instances (OCI)
+|       +-- variables.tf
+|       +-- outputs.tf
++-- examples/
+    +-- aws-only/        # AWS-only deployment
+    +-- oci-only/        # OCI-only deployment
+    +-- dual-cloud/      # Both clouds simultaneously
+```
+
+## AWS vs OCI: What This Project Handles
+
+| Concern | AWS | OCI | How This Module Handles It |
+|---------|-----|-----|---------------------------|
+| Network boundary | VPC | VCN | Same `vpc_cidr` variable, different resource types |
+| Subnet scope | AZ-specific | Regional (all ADs) | Module respects OCI's regional model |
+| Internet access | Internet Gateway | Internet Gateway | Both provisioned identically |
+| Security rules | Security Group | Security List | Same port definitions (22, 80, 443), different syntax |
+| Compute | EC2 instance | oci_core_instance | Same `instance_count`, different shape system |
+| Sizing | Instance type (fixed) | Flex shape (configurable) | OCI exposes `ocpus` + `memory_gb` variables |
+| Isolation | Account boundary | Compartment | OCI requires `compartment_ocid` variable |
+| Image lookup | AMI (by name filter) | Image OCID (by OS filter) | Both auto-resolved when left empty |
+| Tags | Resource tags | Freeform tags | Both applied with Environment/Project/ManagedBy |
+
+## What I'd Add Next
+
+- **Load balancer module**: AWS ALB + OCI Load Balancer behind the same interface
+- **Object storage module**: S3 + OCI Object Storage
+- **Database module**: RDS + OCI Autonomous Database
+- **Cross-cloud connectivity**: VPN or FastConnect + Direct Connect peering
+- **Cost estimation**: `terraform plan` + Infracost for dual-cloud cost comparison
+- **Policy as code**: Sentinel/OPA policies enforcing consistent tagging across clouds
+
+## Context
+
+This pattern was distilled from multi-cloud infrastructure work at Raytheon, where defense programs required AWS, Azure, GCP, and OCI depending on compliance frameworks and contractual obligations. The abstraction approach ( define the contract, implement per-cloud ) proved more maintainable than maintaining separate codebases per cloud.
+
+## License
+
+MIT
